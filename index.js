@@ -6,7 +6,6 @@ const axios = require('axios');
 const pdfParse = require('pdf-parse');
 const bodyParser = require('body-parser');
 const cors = require('cors');
-const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
@@ -19,7 +18,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // -----------------------
-// Serve frontend files
+// Serve frontend files (SPA)
 // -----------------------
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -55,36 +54,25 @@ app.post('/api/verify', async (req, res) => {
 
     const data = await pdfParse(buffer);
 
-    // Flexible success check
+    // Check for success keywords
     const textLower = data.text.trim().toLowerCase();
     const successKeywords = ['successful', 'paid', 'completed', 'receipt', 'ተከፈለ']; // English + Amharic
     const success = successKeywords.some(keyword => textLower.includes(keyword));
 
-    // Save JSON for record
-    fs.writeFileSync(`receipt-${transaction}.json`, JSON.stringify({ text: data.text }, null, 2));
-
+    // Respond directly without saving
     if (success) {
       res.json({ ok: true, message: 'Transaction Successful' });
     } else {
-      res.json({
-        ok: false,
-        message: 'Transaction Failed',
-        reason: 'Transaction not recognized as successful',
-        snippet: data.text.slice(0, 500) // first 500 chars for debugging
-      });
+      res.json({ ok: false, message: 'Transaction Failed', reason: 'Transaction not recognized as successful' });
     }
 
   } catch (err) {
-    res.json({
-      ok: false,
-      message: 'Transaction Failed',
-      reason: 'Verification service unavailable: ' + err.message
-    });
+    res.json({ ok: false, message: 'Transaction Failed', reason: 'Verification service unavailable: ' + err.message });
   }
 });
 
 // -----------------------
-// SPA fallback
+// SPA fallback for frontend
 // -----------------------
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) {
@@ -97,5 +85,5 @@ app.use((req, res, next) => {
 // -----------------------
 // Start server
 // -----------------------
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
