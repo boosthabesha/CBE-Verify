@@ -69,7 +69,15 @@
           body: JSON.stringify({ transaction, last8 })
         });
 
-        const data = await res.json();
+        let data;
+        if (res.ok) {
+          // Only parse JSON if response is OK
+          data = await res.json();
+        } else {
+          // If server returned an error page, read as text
+          const text = await res.text();
+          throw new Error(`Server Error: ${text.substring(0, 200)}...`);
+        }
 
         if (data.ok) {
           result.textContent = "✅ Transaction Successful";
@@ -78,6 +86,7 @@
           result.textContent = `❌ ${data.message}${data.reason ? ': ' + data.reason : ''}`;
           result.className = "mt-4 p-4 rounded-xl text-center text-red-800 bg-red-100 fade-in";
         }
+
       } catch (err) {
         result.textContent = "❌ Error: " + err.message;
         result.className = "mt-4 p-4 rounded-xl text-center text-red-800 bg-red-100 fade-in";
