@@ -1,11 +1,11 @@
-// api/verify.js
+// /api/verify.js
 import axios from 'axios';
-import pdfParse from 'pdf-parse';
-import https from 'https';
+import pdf from 'pdf-parse-lite';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') 
+  if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, message: 'Method not allowed' });
+  }
 
   const { transaction, last8 } = req.body;
 
@@ -16,28 +16,43 @@ export default async function handler(req, res) {
   const target = `https://apps.cbe.com.et:100/BranchReceipt/${encodeURIComponent(transaction)}&${encodeURIComponent(last8)}`;
 
   try {
+    // Fetch PDF as arraybuffer
     const response = await axios.get(target, {
       responseType: 'arraybuffer',
-      timeout: 15000,
+      timeout: 10000,
       headers: {
         'User-Agent': 'Mozilla/5.0',
         'Accept': 'application/pdf',
         'Referer': 'https://apps.cbe.com.et/'
-      },
-      httpsAgent: new https.Agent({ rejectUnauthorized: false })
+      }
     });
 
     const buffer = Buffer.from(response.data || []);
+
     if (!buffer.length) {
-      return res.status(200).json({ ok: false, message: 'Transaction Failed', reason: 'Empty PDF received' });
+      return res.status(200).json({
+        ok: false,
+        message: 'Transaction Failed',
+        reason: 'Empty PDF received'
+      });
     }
 
-    const data = await pdfParse(buffer);
-    const textLower = data.text.trim().toLowerCase();
+    // Parse PDF text
+    let text;
+    try {
+      text = await pdf(buffer);
+      text = text.toLowerCase();
+    } catch (err) {
+      return res.status(200).json({
+        ok: false,
+        message: 'Transaction Failed',
+        reason: 'Failed to parse PDF: ' + err.message
+      });
+    }
 
-    // Keywords for success (English + Amharic)
+    // Check success keywords (English + Amharic)
     const successKeywords = ['successful', 'paid', 'completed', 'receipt', 'ተከፈለ'];
-    const success = successKeywords.some(keyword => textLower.includes(keyword));
+    const success = successKeywords.some(k => text.includes(k));
 
     return res.status(200).json({
       ok: success,
