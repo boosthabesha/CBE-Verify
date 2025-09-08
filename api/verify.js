@@ -1,30 +1,54 @@
 // api/verify.js
 import axios from 'axios';
 import pdfParse from 'pdf-parse';
+import https from 'https';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ ok: false, message: 'Method not allowed' });
+  if (req.method !== 'POST') 
+    return res.status(405).json({ ok: false, message: 'Method not allowed' });
 
   const { transaction, last8 } = req.body;
 
-  if (!transaction || !last8) {
+  if (!transaction || !last8 || last8.length !== 8) {
     return res.status(400).json({ ok: false, message: 'Transaction and last 8 digits required' });
   }
 
   const target = `https://apps.cbe.com.et:100/BranchReceipt/${encodeURIComponent(transaction)}&${encodeURIComponent(last8)}`;
 
   try {
-    const response = await axios.get(target, { responseType: 'arraybuffer', timeout: 10000 });
+    const response = await axios.get(target, {
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/pdf',
+        'Referer': 'https://apps.cbe.com.et/'
+      },
+      httpsAgent: new https.Agent({ rejectUnauthorized: false })
+    });
 
-    if (!response || !response.data) throw new Error('Empty response');
+    const buffer = Buffer.from(response.data || []);
+    if (!buffer.length) {
+      return res.status(200).json({ ok: false, message: 'Transaction Failed', reason: 'Empty PDF received' });
+    }
 
-    const buffer = Buffer.from(response.data);
     const data = await pdfParse(buffer);
-    const text = data.text.toLowerCase();
-    const success = text.includes('successful') || text.includes('receipt');
+    const textLower = data.text.trim().toLowerCase();
 
-    res.status(200).json({ ok: success, message: success ? 'Transaction Successful' : 'Transaction Failed' });
+    // Keywords for success (English + Amharic)
+    const successKeywords = ['successful', 'paid', 'completed', 'receipt', 'ተከፈለ'];
+    const success = successKeywords.some(keyword => textLower.includes(keyword));
+
+    return res.status(200).json({
+      ok: success,
+      message: success ? 'Transaction Successful' : 'Transaction Failed'
+    });
+
   } catch (err) {
-    res.status(502).json({ ok: false, message: 'Verification Failed', reason: err.message });
+    return res.status(200).json({
+      ok: false,
+      message: 'Verification Failed',
+      reason: err.message
+    });
   }
 }
